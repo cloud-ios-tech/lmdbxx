@@ -33,9 +33,32 @@
 #include <stdexcept>   /* for std::runtime_error */
 #include <string>      /* for std::string */
 #include <type_traits> /* for std::is_pod<> */
+#include <vector>      /* for std::vector */
 
 namespace lmdb {
   using mode = mdb_mode_t;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+/* Procedural Interface: Metadata */
+
+namespace lmdb {
+  static inline std::string strcode(const char *origin, int rc);
+  // TODO: mdb_strerror()
+  // TODO: mdb_version()
+}
+
+/**
+ * Formats description for LMDB error code.
+ * @see http://www.lmdb.tech/doc/group__errors.html
+ */
+static inline std::string
+lmdb::strcode(const char *origin, int rc) {
+  constexpr const char *format = "%s: %s";
+  const int size = std::snprintf(nullptr, 0, format, origin, ::mdb_strerror(rc));
+  std::vector<char> buffer(static_cast<std::size_t>(size) + 1);
+  std::snprintf(&buffer[0], buffer.size(), format, origin, ::mdb_strerror(rc));
+  return std::string(buffer.begin(), buffer.end());
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -63,6 +86,7 @@ namespace lmdb {
 class lmdb::error : public std::runtime_error {
 protected:
   const int _code;
+  const std::string _message;
 
 public:
   /**
@@ -76,7 +100,8 @@ public:
   error(const char* const origin,
         const int rc) noexcept
     : runtime_error{origin},
-      _code{rc} {}
+      _code{rc},
+      _message(lmdb::strcode(origin, rc)) {}
 
   /**
    * Returns the underlying LMDB error code.
@@ -96,10 +121,7 @@ public:
    * Returns the underlying LMDB error code.
    */
   virtual const char* what() const noexcept {
-    static thread_local char buffer[1024];
-    std::snprintf(buffer, sizeof(buffer),
-      "%s: %s", origin(), ::mdb_strerror(code()));
-    return buffer;
+    return _message.c_str();
   }
 };
 
@@ -213,14 +235,6 @@ lmdb::error::raise(const char* const origin,
 #endif
     default:                   throw lmdb::runtime_error{origin, rc};
   }
-}
-
-////////////////////////////////////////////////////////////////////////////////
-/* Procedural Interface: Metadata */
-
-namespace lmdb {
-  // TODO: mdb_version()
-  // TODO: mdb_strerror()
 }
 
 ////////////////////////////////////////////////////////////////////////////////
